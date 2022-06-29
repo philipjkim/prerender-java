@@ -1,6 +1,22 @@
 package com.github.greengerong;
 
+import static com.github.greengerong.PrerenderSeoService.ESCAPED_FRAGMENT_KEY;
+import static org.apache.http.HttpStatus.SC_NOT_FOUND;
+import static org.apache.http.HttpStatus.SC_OK;
+import static org.apache.http.client.methods.HttpGet.METHOD_NAME;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.google.common.collect.Maps;
+import java.io.PrintWriter;
+import java.util.Enumeration;
+import java.util.HashMap;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import org.apache.http.Header;
 import org.apache.http.StatusLine;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -12,21 +28,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
-
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.PrintWriter;
-import java.util.Enumeration;
-import java.util.HashMap;
-
-import static com.github.greengerong.PrerenderSeoService.ESCAPED_FRAGMENT_KEY;
-import static org.apache.http.HttpStatus.SC_NOT_FOUND;
-import static org.apache.http.HttpStatus.SC_OK;
-import static org.apache.http.client.methods.HttpGet.METHOD_NAME;
-import static org.mockito.Mockito.*;
 
 @RunWith(MockitoJUnitRunner.class)
 public class PreRenderSEOFilterTest {
@@ -54,10 +55,10 @@ public class PreRenderSEOFilterTest {
     private PrintWriter printWriter;
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         preRenderSEOFilter = new PreRenderSEOFilter() {
             @Override
-            public void init(FilterConfig filterConfig) throws ServletException {
+            public void init(FilterConfig filterConfig) {
                 setPrerenderSeoService(new PrerenderSeoService(toMap(filterConfig)) {
                     @Override
                     protected CloseableHttpClient getHttpClient() {
@@ -86,6 +87,35 @@ public class PreRenderSEOFilterTest {
         //then
         verify(httpClient, never()).execute(httpGet);
         verify(filterChain).doFilter(servletRequest, servletResponse);
+    }
+
+    @Test
+    public void should_handle_when_protocol_set() throws Exception {
+        //given
+        when(filterConfig.getInitParameter("protocol")).thenReturn("https");
+        preRenderSEOFilter.init(filterConfig);
+        final CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
+        final StatusLine statusLine = mock(StatusLine.class);
+
+        when(servletRequest.getRequestURL()).thenReturn(new StringBuffer("http://localhost/test"));
+        when(servletRequest.getScheme()).thenReturn("http");
+        when(servletRequest.getMethod()).thenReturn(METHOD_NAME);
+        when(servletRequest.getHeaderNames()).thenReturn(mock(Enumeration.class));
+        when(httpClient.execute(httpGet)).thenReturn(httpResponse);
+        when(httpResponse.getStatusLine()).thenReturn(statusLine);
+        final HashMap<String, String> map = Maps.newHashMap();
+        map.put(ESCAPED_FRAGMENT_KEY, "");
+        when(servletRequest.getParameterMap()).thenReturn(map);
+        when(statusLine.getStatusCode()).thenReturn(SC_OK);
+        when(httpResponse.getAllHeaders()).thenReturn(new Header[0]);
+        when(servletResponse.getWriter()).thenReturn(printWriter);
+
+        //when
+        preRenderSEOFilter.doFilter(servletRequest, servletResponse, filterChain);
+
+        //then
+        verify(httpClient).execute(httpGet);
+        verify(filterChain, never()).doFilter(servletRequest, servletResponse);
     }
 
     @Test

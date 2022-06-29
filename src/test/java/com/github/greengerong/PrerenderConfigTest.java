@@ -1,18 +1,15 @@
 package com.github.greengerong;
 
+import static org.junit.Assert.assertNotNull;
+
 import com.google.common.collect.Maps;
+import java.util.Map;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.junit.Test;
 
-import java.util.Map;
-
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsNull.notNullValue;
-import static org.junit.Assert.assertThat;
-
 public class PrerenderConfigTest {
     @Test(expected = Exception.class)
-    public void should_throw_exception_if_invalid_timeout_value_specified() throws Exception {
+    public void should_throw_exception_if_invalid_timeout_value_specified() {
         //given
         Map<String, String> configuration = Maps.newHashMap();
         configuration.put("socketTimeout", "not_an_int");
@@ -22,7 +19,7 @@ public class PrerenderConfigTest {
     }
 
     @Test
-    public void should_pass_if_correct_timeout_value_specified() throws Exception {
+    public void should_pass_if_correct_timeout_value_specified() {
         //given
         Map<String, String> configuration = Maps.newHashMap();
         configuration.put("socketTimeout", "1000");
@@ -30,6 +27,6 @@ public class PrerenderConfigTest {
         //when
         final CloseableHttpClient httpClient = config.getHttpClient();
 
-        assertThat(httpClient, is(notNullValue()));
+        assertNotNull(httpClient);
     }
 }

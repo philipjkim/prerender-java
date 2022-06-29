@@ -2,6 +2,7 @@ package com.github.greengerong;
 
 
 import com.google.common.collect.Lists;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -9,8 +10,6 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.DefaultProxyRoutePlanner;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.List;
@@ -18,10 +17,10 @@ import java.util.Map;
 
 import static org.apache.commons.lang.StringUtils.isNotBlank;
 
+@Slf4j
 public class PrerenderConfig {
-    private final static Logger log = LoggerFactory.getLogger(PrerenderConfig.class);
-    public static final String PRERENDER_IO_SERVICE_URL = "http://service.prerender.io/";
-    private Map<String, String> config;
+    public static final String PRERENDER_IO_SERVICE_URL = "https://service.prerender.io/";
+    private final Map<String, String> config;
 
     public PrerenderConfig(Map<String, String> config) {
         this.config = config;
@@ -31,7 +30,8 @@ public class PrerenderConfig {
         final String preRenderEventHandler = config.get("preRenderEventHandler");
         if (isNotBlank(preRenderEventHandler)) {
             try {
-                return (PreRenderEventHandler) Class.forName(preRenderEventHandler).newInstance();
+                return (PreRenderEventHandler) Class.forName(preRenderEventHandler)
+                    .getDeclaredConstructor().newInstance();
             } catch (Exception e) {
                 log.error("PreRenderEventHandler class not find or can not new a instance", e);
             }
@@ -49,23 +49,21 @@ public class PrerenderConfig {
         return builder.build();
     }
 
-    private HttpClientBuilder configureProxy(HttpClientBuilder builder) {
+    private void configureProxy(HttpClientBuilder builder) {
         final String proxy = config.get("proxy");
         if (isNotBlank(proxy)) {
             final int proxyPort = Integer.parseInt(config.get("proxyPort"));
             DefaultProxyRoutePlanner routePlanner = new DefaultProxyRoutePlanner(new HttpHost(proxy, proxyPort));
             builder.setRoutePlanner(routePlanner);
         }
-        return builder;
     }
 
-    private HttpClientBuilder configureTimeout(HttpClientBuilder builder) {
+    private void configureTimeout(HttpClientBuilder builder) {
         final String socketTimeout = getSocketTimeout();
         if (socketTimeout != null) {
             RequestConfig config = RequestConfig.custom().setSocketTimeout(Integer.parseInt(socketTimeout)).build();
             builder.setDefaultRequestConfig(config);
         }
-        return builder;
     }
 
     public String getSocketTimeout() {
@@ -79,7 +77,7 @@ public class PrerenderConfig {
     public String getForwardedURLHeader() {
         return config.get("forwardedURLHeader");
     }
-    
+
     public String getProtocol() {
         return config.get("protocol");
     }

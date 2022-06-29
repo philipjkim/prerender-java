@@ -1,5 +1,13 @@
-Prerender Java [![Build Status](https://travis-ci.org/greengerong/prerender-java.png)](https://travis-ci.org/greengerong/prerender-java)
-===========================
+# prerender-java
+
+Fork of [greengerong/prerender-java](https://github.com/greengerong/prerender-java)
+
+## Changes from the original repo
+- Get dependencies version up-to-date
+- Make `protocol` param work as expected
+- Java 17+ required
+
+## README of original repo
 
 Are you using backbone, angular, emberjs, etc, but you're unsure about the SEO implications?
 

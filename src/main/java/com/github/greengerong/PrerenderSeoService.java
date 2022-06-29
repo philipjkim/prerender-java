@@ -1,9 +1,29 @@
 package com.github.greengerong;
 
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
+import static org.apache.commons.lang.StringUtils.isNotBlank;
+import static org.apache.http.HttpHeaders.CONTENT_LENGTH;
+import static org.apache.http.HttpHeaders.HOST;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.lang.StringUtils;
-import org.apache.http.*;
+import org.apache.http.Header;
+import org.apache.http.HeaderElement;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpHost;
+import org.apache.http.HttpRequest;
+import org.apache.http.HttpResponse;
+import org.apache.http.NameValuePair;
+import org.apache.http.ParseException;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.URIUtils;
@@ -14,36 +34,18 @@ import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.Arrays;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Pattern;
-
-import static com.google.common.collect.FluentIterable.from;
-import static org.apache.commons.lang.StringUtils.isNotBlank;
-import static org.apache.http.HttpHeaders.CONTENT_LENGTH;
-import static org.apache.http.HttpHeaders.HOST;
-
 public class PrerenderSeoService {
     private final static Logger log = LoggerFactory.getLogger(PrerenderSeoService.class);
     /**
      * These are the "hop-by-hop" headers that should not be copied.
-     * http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
+     * <a href="http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html">...</a>
      * I use an HttpClient HeaderGroup class instead of Set<String> because this
-     * approach does case insensitive lookup faster.
+     * approach does case-insensitive lookup faster.
      */
     private static final HeaderGroup hopByHopHeaders;
     public static final String ESCAPED_FRAGMENT_KEY = "_escaped_fragment_";
-    private CloseableHttpClient httpClient;
-    private PrerenderConfig prerenderConfig;
+    private final CloseableHttpClient httpClient;
+    private final PrerenderConfig prerenderConfig;
     private PreRenderEventHandler preRenderEventHandler;
 
     public PrerenderSeoService(Map<String, String> config) {
@@ -83,14 +85,13 @@ public class PrerenderSeoService {
             throws URISyntaxException, IOException {
         if (shouldShowPrerenderedPage(servletRequest)) {
             this.preRenderEventHandler = prerenderConfig.getEventHandler();
-            if (beforeRender(servletRequest, servletResponse) || proxyPrerenderedPageResponse(servletRequest, servletResponse)) {
-                return true;
-            }
+            return beforeRender(servletRequest, servletResponse) || proxyPrerenderedPageResponse(
+                servletRequest, servletResponse);
         }
         return false;
     }
 
-    private boolean shouldShowPrerenderedPage(HttpServletRequest request) throws URISyntaxException {
+    private boolean shouldShowPrerenderedPage(HttpServletRequest request) {
         final String userAgent = request.getHeader("User-Agent");
         final String url = getRequestURL(request);
         final String referer = request.getHeader("Referer");
@@ -153,8 +154,6 @@ public class PrerenderSeoService {
 
     /**
      * Copy request headers from the servlet client to the proxy request.
-     *
-     * @throws java.net.URISyntaxException
      */
     private void copyRequestHeaders(HttpServletRequest servletRequest, HttpRequest proxyRequest)
             throws URISyntaxException {
@@ -191,8 +190,10 @@ public class PrerenderSeoService {
             }
         }
         if (StringUtils.isNotEmpty(prerenderConfig.getProtocol())) {
-            String url = request.getRequestURL().toString();
-            return url.replace(request.getScheme(), prerenderConfig.getProtocol());
+            var url = request.getRequestURL().toString();
+            var schemeReplaced = url.replace(request.getScheme(), prerenderConfig.getProtocol());
+            log.debug("getRequestURL: schemeReplaced: {} -> {}", url, schemeReplaced);
+            return schemeReplaced;
         }
         return request.getRequestURL().toString();
     }
@@ -210,18 +211,11 @@ public class PrerenderSeoService {
      */
     private void copyResponseHeaders(HttpResponse proxyResponse, final HttpServletResponse servletResponse) {
         servletResponse.setCharacterEncoding(getContentCharSet(proxyResponse.getEntity()));
-        from(Arrays.asList(proxyResponse.getAllHeaders())).filter(new Predicate<Header>() {
-            @Override
-            public boolean apply(Header header) {
-                return !hopByHopHeaders.containsHeader(header.getName());
-            }
-        }).transform(new Function<Header, Boolean>() {
-            @Override
-            public Boolean apply(Header header) {
+        for (Header header : proxyResponse.getAllHeaders()) {
+            if (!hopByHopHeaders.containsHeader(header.getName())) {
                 servletResponse.addHeader(header.getName(), header.getValue());
-                return true;
             }
-        }).toList();
+        }
     }
     
     /**
@@ -233,7 +227,7 @@ public class PrerenderSeoService {
         }
         String charset = null;
         if (entity.getContentType() != null) {
-            HeaderElement values[] = entity.getContentType().getElements();
+            HeaderElement[] values = entity.getContentType().getElements();
             if (values.length > 0) {
                 NameValuePair param = values[0].getParameterByName("charset");
                 if (param != null) {
@@ -280,43 +274,27 @@ public class PrerenderSeoService {
     }
 
     private boolean isInBlackList(final String url, final String referer, List<String> blacklist) {
-        return from(blacklist).anyMatch(new Predicate<String>() {
-            @Override
-            public boolean apply(String regex) {
-                final Pattern pattern = Pattern.compile(regex);
-                return pattern.matcher(url).matches() ||
-                        (!StringUtils.isBlank(referer) && pattern.matcher(referer).matches());
-            }
+        return blacklist.stream().anyMatch(regex -> {
+            final Pattern pattern = Pattern.compile(regex);
+            return pattern.matcher(url).matches() ||
+                (!StringUtils.isBlank(referer) && pattern.matcher(referer).matches());
         });
     }
 
     private boolean isInSearchUserAgent(final String userAgent) {
-        return from(prerenderConfig.getCrawlerUserAgents()).anyMatch(new Predicate<String>() {
-            @Override
-            public boolean apply(String item) {
-                return userAgent.toLowerCase().contains(item.toLowerCase());
-            }
-        });
+        return prerenderConfig.getCrawlerUserAgents().stream()
+            .anyMatch(item -> userAgent.toLowerCase().contains(item.toLowerCase()));
     }
 
 
     private boolean isInResources(final String url) {
-        return from(prerenderConfig.getExtensionsToIgnore()).anyMatch(new Predicate<String>() {
-            @Override
-            public boolean apply(String item) {
-                return (url.indexOf('?') >= 0 ? url.substring(0, url.indexOf('?')) : url)
-                        .toLowerCase().endsWith(item);
-            }
-        });
+        return prerenderConfig.getExtensionsToIgnore().stream()
+            .anyMatch(item -> (url.indexOf('?') >= 0 ? url.substring(0, url.indexOf('?')) : url)
+                .toLowerCase().endsWith(item));
     }
 
     private boolean isInWhiteList(final String url, List<String> whitelist) {
-        return from(whitelist).anyMatch(new Predicate<String>() {
-            @Override
-            public boolean apply(String regex) {
-                return Pattern.compile(regex).matcher(url).matches();
-            }
-        });
+        return whitelist.stream().anyMatch(regex -> Pattern.compile(regex).matcher(url).matches());
     }
 
     private boolean beforeRender(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -336,7 +314,7 @@ public class PrerenderSeoService {
     private boolean proxyPrerenderedPageResponse(HttpServletRequest request, HttpServletResponse response)
             throws IOException, URISyntaxException {
         final String apiUrl = getApiUrl(getFullUrl(request));
-        log.trace(String.format("Prerender proxy will send request to:%s", apiUrl));
+        log.debug("Prerender proxy will send request to {}", apiUrl);
         final HttpGet getMethod = getHttpGet(apiUrl);
         copyRequestHeaders(request, getMethod);
         withPrerenderToken(getMethod);
