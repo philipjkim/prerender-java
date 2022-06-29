@@ -192,7 +192,7 @@ public class PrerenderSeoService {
         if (StringUtils.isNotEmpty(prerenderConfig.getProtocol())) {
             var url = request.getRequestURL().toString();
             var schemeReplaced = url.replace(request.getScheme(), prerenderConfig.getProtocol());
-            log.debug("getRequestURL: schemeReplaced: {} -> {}", url, schemeReplaced);
+            log.trace("getRequestURL: schemeReplaced: {} -> {}", url, schemeReplaced);
             return schemeReplaced;
         }
         return request.getRequestURL().toString();
